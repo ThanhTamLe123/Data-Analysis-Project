@@ -1,0 +1,100 @@
+--linear regression
+# chia du lieu
+CREATE OR REPLACE TABLE DA04_K298.selling_price_new
+AS
+SELECT *,
+ CASE 
+  WHEN split_field < 0.9 THEN 'training'
+  WHEN split_field >= 0.9 THEN 'evaluation'
+ END AS split_dataframe
+FROM (
+  SELECT * , ROUND(ABS(RAND()),3) AS split_field 
+  FROM `DA04_K298.selling_price` 
+);
+
+SELECT split_dataframe, count(split_field) as num_rows 
+FROM `DA04_K298.selling_price_new`
+GROUP BY split_dataframe;
+
+# Xay dung mo hinh
+CREATE OR REPLACE MODEL DA04_K298.selling_price_linear_model
+OPTIONS(
+  model_type = 'linear_reg',
+  input_label_cols = ['Selling_Price']
+) AS
+SELECT * 
+FROM `DA04_K298.selling_price_new`
+WHERE Selling_Price IS NOT NULL AND split_dataframe like 'training';
+
+# Danh gia mo hinh
+SELECT *
+FROM ML.EVALUATE(MODEL `DA04_K298.selling_price_linear_model`, (
+  SELECT * 
+  FROM `DA04_K298.selling_price_new`
+  WHERE Selling_Price IS NOT NULL AND split_dataframe like 'evaluation'
+) );
+
+--Boosted Tree
+# Xay dung mo hinh
+CREATE OR REPLACE MODEL DA04_K298.selling_price_boostedtree_model
+OPTIONS(
+  model_type = 'BOOSTED_TREE_REGRESSOR',
+  NUM_PARALLEL_TREE=2,
+  max_tree_depth=4,
+  input_label_cols = ['Selling_Price']
+)
+AS
+SELECT * EXCEPT(split_dataframe,split_field )
+FROM `DA04_K298.selling_price_new`
+Where Selling_Price is not null and split_dataframe like 'training';
+
+#Danh gia mo hinh
+Select *
+from ML.EVALUATE(MODEL DA04_K298.selling_price_boostedtree_model,
+(SELECT * EXCEPT(split_dataframe,split_field )
+FROM `DA04_K298.selling_price_new`
+Where Selling_Price is not null and split_dataframe like 'evaluation')
+);
+
+--Random Forest
+# Xay dung mo hinh
+CREATE OR REPLACE MODEL DA04_K298.selling_price_randomforest_model
+OPTIONS(
+  model_type = 'RANDOM_FOREST_REGRESSOR',
+  NUM_PARALLEL_TREE=50,
+  TREE_METHOD='AUTO',
+  input_label_cols = ['Selling_Price']
+)
+AS
+SELECT * EXCEPT(split_dataframe,split_field )
+FROM `DA04_K298.selling_price_new`
+Where Selling_Price is not null and split_dataframe like 'training';
+
+-- Danh gia mo hinh
+Select *
+from ML.EVALUATE(MODEL DA04_K298.selling_price_randomforest_model,
+(SELECT * EXCEPT(split_dataframe,split_field )
+FROM `DA04_K298.selling_price_new`
+Where Selling_Price is not null and split_dataframe like 'evaluation')
+);
+
+-- Chọn Boosted Tree vì có MEA bé nhất và r2_score lớn nhất
+
+-- Dự đoán
+SELECT *
+FROM ML.PREDICT(MODEL DA04_K298.selling_price_boostedtree_model,(
+  SELECT 
+  'Maruti Zen LX' as Car_Name,
+  2005 as Year,
+  50000 as Kms_Driven,
+  'Petrol' as Fuel_Type,
+  'Individual' as Seller_Type,
+  'Manual' as Transmission,
+  'First Owner' as Owner,
+  1367 as engine,
+  71 as max_power,
+  5 as seats,
+  20 as mileage
+))
+
+-- Predict selling_ price: 133544.140625
